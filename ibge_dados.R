@@ -144,9 +144,24 @@ grafico_barras <- ggplot(area_plantada3,
   scale_fill_brewer(palette = "Set3")
 
 
-# salvando dados cultivos
+#==== salvando dados cultivos ==================================================
 
-write.csv(area_plantada2,file.path(p,"tabelas_IBGE","area_plantada.csv"),row.names = F)
+
+head(agri)
+head(municipios_afetados)
+
+# adicionando territorio a tabela
+
+
+area_plantada2_terr <- left_join(area_plantada2,municipios_afetados[,c(2,10)])
+
+write.csv(area_plantada2_terr,file.path(p,"tabelas_IBGE","area_plantada.csv"),
+          row.names = F)
+
+
 
 ggsave(filename = "cultivos_maior15porcento.jpg",plot = grafico_barras,
        width = 20,height = 25,units = "cm")
+
+
+
