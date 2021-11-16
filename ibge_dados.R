@@ -164,4 +164,49 @@ ggsave(filename = "cultivos_maior15porcento.jpg",plot = grafico_barras,
        width = 20,height = 25,units = "cm")
 
 
+#==== dados de populacao urbana e rural ========================================
+
+
+# filtros para os dados SIDRA populacao
+
+censo <- 2103
+periodo <- c('2010')
+nivel_territorial <- "City"
+filtro_mun <- municipios_afetados$GEOCODIGO
+
+
+info_sidra(x = 2103, wb = TRUE)
+
+f2 <- function(x)get_sidra(x = censo,period = periodo,geo=nivel_territorial,
+                          geo.filter = list(x),classific = c("c1"),
+                          category = list(c(0,1,2)))
+
+# looping get_sidr through the list
+
+pop_data <- lapply(mun_code,f2)
+
+# combining the data again
+
+pop <- as.data.frame(do.call(rbind,pop_data))
+
+# eliminando duplicatas!
+pop <- pop[!duplicated(pop),]
+
+
+# filtrando dados
+
+pop <- pop[,-c(14:19)]
+
+
+# adicionando bacia
+
+
+names(pop)[6] <- "GEOCODIGO"
+
+pop2 <- left_join(pop,municipios_afetados[,c(2,10)])
+
+write.csv(pop,file.path(p,"tabelas_IBGE","sidra_populacao_2010.csv"),row.names = F)
+
+
+
 
