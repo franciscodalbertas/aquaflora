@@ -117,3 +117,8 @@ for(i in seq(1,nrow(b),1)){
   
 }
 
+gc()
+
+# apagando pasta de arquivos temporarios
+
+unlink(file.path(file.path(p,"/temp")), recursive = TRUE)
