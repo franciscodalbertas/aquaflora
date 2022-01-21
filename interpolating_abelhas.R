@@ -5,10 +5,15 @@ library(dplyr)
 library(sf)
 library(raster)
 library(gstat)
+library(readxl)
 
 #===============================================================================
 
-# abris shapes de pontos e juntat
+#------------------------------------------------------------------------------
+
+# abris shapes de pontos e juntar (dados secundarios)
+
+#------------------------------------------------------------------------------
 
 p <- dirname(getwd())
 
@@ -25,7 +30,6 @@ arcadis$prov <- "arcadis"
 arcadis$date <- NA
 names(arcadis)[4:6] <- c("lon","lat","name")
 
-
 IDE <-  st_read(file.path(p,"bases_IDE_SISEMA"))
 
 IDE$prov <- "IDE"
@@ -36,7 +40,6 @@ names(IDE)[c(4,15:16)] <- c("name","lon","lat")
 # filtrar apenas himenoptera e lepdoptera
 
 IDE <- IDE %>% filter(orderdarwi==c("Hymenoptera","Lepidoptera"))
-
 
 head(abelhas)
 head(azevedo_inat)
@@ -60,16 +63,151 @@ st_geometry(IDE) <- NULL
 df_abelhas <- rbind(azevedo_inat,azevedo_gbif[,1:5],abelhas[,1:5],arcadis[,c(6,4,5,8,9)],
                     IDE)
 
+#------------------------------------------------------------------------------
+
+# novos dados de campo
+
+#------------------------------------------------------------------------------
+
+
+novos_dados <- read_excel("G:/Meu Drive/aquaflora/dados_campo_vale/ID_ABELHAS-13JAN_corr.xlsx")
+
+head(novos_dados)
+
+# corrigindo coluna ponto amostral
+
+novos_dados2 <- novos_dados %>% 
+  separate('ID amostra', c("Ponto","data"),sep = '_')
+
+# juntar como coordenadas
+
+malha <- st_read(file.path(p,"malha_amostral_vale",
+                           "malha_terrestre.shp"))
+
+
+# juntando 
+
+names(novos_dados2)
+names(malha)
+head(malha)
+
+novos_dados2$Ponto
+
+names(malha)[2] <- "Ponto"
+
+malha2 <- malha[,2]
+
+# juntando malha com dados!\\
+
+#==============================================================================
+
+# tem q padronizar os nomes dos pontos tudo pra maiuscula! e outros erros!
+
+#==============================================================================
+
+
+malha2$Ponto <- toupper(malha2$Ponto)
+
+
+
+
+checar_nomes <- malha2$Ponto %in% novos_dados2$Ponto
+
+nomes_nao_batem <- malha2$Ponto [!malha2$Ponto %in% novos_dados2$Ponto]
+
+
+#CA.AI.FESSM.1 novos dados
+#CA.AI.FESSM.1
+# CA.AI.FESSM,1
+
+# alguns dados tem , no lugar de ponto!
+# SA.AI.AA2 nao bate! certo eh ter ponto entre AA e 2
+
+novos_dados2$Ponto[novos_dados2$Ponto=="SA.AI.AA2"] <- "SA.AI.AA.2"
+# AS.AR.AA.3 nao existe...so tem SA!
+novos_dados3$Ponto[novos_dados2$Ponto=="AS.AR.AA.3"] <- "SA.AR.AA.3"
+
+# SU.A1.AA.1 nao eh a1, eh ai! A1 todos sao AI
+
+novos_dados3$Ponto[novos_dados2$Ponto=="SU.A1.AA.1"] <- "SU.AI.AA.1"
+
+# SD.AR.AA.3 esse nao existe!
+
+# SU.A1.AA.1 eh AI
+
+novos_dados3$Ponto[novos_dados2$Ponto=="SU.A1.AA.1"] <- "SU.AI.AA.1"
+
+# SA.AR.FESM  faltou numerar fesm1,2,3
+
+# AS.AR.AA.3 substituir por SA
+
+novos_dados3$Ponto[novos_dados2$Ponto=="AS.AR.AA.3"] <- "SA.AR.AA.3"
+
+novos_dados3 <- left_join(novos_dados2,malha2)
+
+novos_dados3$prov <- "arcadis"
+
+novos_dados3 <- st_as_sf(novos_dados3)
+
+novos_dados3 <- cbind(novos_dados3,st_coordinates(novos_dados3))
+
+head(novos_dados3)
+
+names(df_abelhas)
+
+names(novos_dados3)[c(2,8,14,15)] <- c("date","name","lon","lat")
+
+st_geometry(novos_dados3) <- NULL
+
+
+
+novos_dados3 <- novos_dados3 %>% dplyr::select(keep)
+
+# juntando novamente!
+
+
+# excluindo datas pq gera confusao. da pra arrumar se precisar!
+
+novos_dados3$date <- NA
+
+str(df_abelhas)
+str(novos_dados3)
+
+novos_dados3$date <- NA
+
+df_abelhas <- rbind(df_abelhas,novos_dados3)
+
+spp <- as.data.frame(table(df_abelhas$name))# checando nomes
+
+#==== limpando df de padroes estranhos ========================================
+
+
+grep(df_abelhas$name,pattern = "BOLD",value = T)
+
+df_abelhas_f <- df_abelhas[!df_abelhas$name %in% grep(df_abelhas$name,
+                                                   pattern = "BOLD",value = T),]
+
+
+spp <- as.data.frame(table(df_abelhas_f$name))# checando nomes
+
+#===============================================================================
+
+
 # transformar em shape pra recortar pra area de estudo
 
-df_abelhas_sp <- st_as_sf(df_abelhas,coords = c("lon","lat"))
+# excluir geometrias vazias
 
-st_crs(df_abelhas_sp ) <- st_crs(ae)
+df_abelhas_f <- df_abelhas_f %>% drop_na(lon)
+
+df_abelhas_sp <- st_as_sf(df_abelhas_f,coords = c("lon","lat"))
+
 
 # selecionar oq cai na AE
 
 
 ae <- st_read(file.path(p,"Area_estudo_SE","AREA_TOTAL_UPGRH_BUFFER2KM_wgs84.shp")) 
+
+st_crs(df_abelhas_sp ) <- st_crs(ae)
 
 
 df_abelhas_int <- st_intersection(df_abelhas_sp,ae)
@@ -77,11 +215,58 @@ df_abelhas_int <- st_intersection(df_abelhas_sp,ae)
 
 plot(st_geometry(df_abelhas_int))
 
+#--------------------------------------------------------
+
+# conferindo tabela
+
+#---------------------------------------------------------
+
+
+spp <- as.data.frame(table(df_abelhas_int$name))
+
+# excluir ?
+
+# Euglossa(so genero e tem varios registros de spp)
+
+df_abelhas_int2 <- df_abelhas_int %>% 
+  filter(name!="Euglossa")
+
+# Euglossa sp.
+
+df_abelhas_int2 <- df_abelhas_int2 %>% 
+  filter(name!="Euglossa sp.")
+
+
+# Eulaema
+
+df_abelhas_int2 <- df_abelhas_int2 %>% 
+  filter(name!="Eulaema")
+
+
+# padronizar!
+# Melipona quadrifasciata
+
+df_abelhas_int2$name[df_abelhas_int2$name=="Melipona quadrifasciata"] <- 
+  "Melipona quadrifasciata anthidioides Lepeletier, 1836" 
+
+# Melipona quadrifasciata anthidioides
+
+df_abelhas_int2$name[df_abelhas_int2$name=="Melipona quadrifasciata anthidioides"] <- 
+  "Melipona quadrifasciata anthidioides Lepeletier, 1836" 
+
+
+# Melipona quadrifasciata anthidioides Lepeletier, 1836
+
+
+
 # salvando shape
 
-st_write(df_abelhas_int,"pontos_ocorrencia_abelhas.shp",append = F)
+st_write(df_abelhas_int,"pontos_ocorrencia_abelhas_novos_pontos_Vale.shp",append = F)
 
 #==== transformar pontos em grid ===============================================
+
+# continuar daqui!!!
+
 
 # essa parte talvez nao precise!
 df_abelhas_pj <-st_transform(df_abelhas_int,crs =st_crs(disp) ) 
