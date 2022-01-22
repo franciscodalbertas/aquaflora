@@ -265,13 +265,18 @@ st_write(df_abelhas_int,"pontos_ocorrencia_abelhas_novos_pontos_Vale.shp",append
 
 #==== transformar pontos em grid ===============================================
 
-# continuar daqui!!!
 
+df_abelhas_int <- st_read("pontos_ocorrencia_abelhas_novos_pontos_Vale.shp")
 
-# essa parte talvez nao precise!
+# projetando
+# raster pra usar de base (riqueza de dispersores)
+disp <- raster::raster(file.path(p,"grids_riqueza","riqueza_dispersores.tif"))
+
 df_abelhas_pj <-st_transform(df_abelhas_int,crs =st_crs(disp) ) 
 df_abelhas_pj <- cbind(df_abelhas_pj,st_coordinates(df_abelhas_pj))
 
+
+# agrupando em grids maiores q os pontos
 
 ji <- function(xy, origin=c(0,0), cellsize=c(540,540)) {
   t(apply(xy, 1, function(z) cellsize/2+origin+cellsize*(floor((z - origin)/cellsize))))
@@ -311,128 +316,63 @@ df_abelhas_agg$name2[df_abelhas_agg$name2=="Melipona quadrifasciata anthidioides
 df_abelhas_agg$name2[df_abelhas_agg$name2=="Paratrigona lineata lineata"] <- 
   "Paratrigona lineata (Lepeletier, 1836)"
 
-df_abelhas_rich <- df_abelhas_agg %>% group_by(loc,name2)%>%
-  summarise(n_spp= n())
+# abundancia!
 
-plot(st_geometry(df_abelhas_rich))
+df_abelhas_abundancia <- df_abelhas_agg %>% group_by(loc,name2)%>%
+  summarise(abundancia= n())
+
+
+# pra calcular riqueza tenho q calcular n spp por ponto!
+
+# mas antes tenho q ter um df de spp unico por loc
+
+df_abelhas_agg_un <- unique(df_abelhas_agg)
+
+
+df_abelhas_rich <- df_abelhas_agg_un %>% group_by(loc)%>%
+  summarise(riqueza= n())
+
 
 #==============================================================================
 
-# contar dados
-
-# teria q ser por pixel!
-
-# to multipoint
-df_abelhas_agg2 <- df_abelhas_agg %>%
-  group_by(name) %>%
-  summarise()
-
-df_abelhas_agg2$id <- as.numeric(as.factor(df_abelhas_agg2$name))
-
-
-# convex hulls
-
-spEOOs <- st_convex_hull(df_abelhas_agg2) 
-
-spEOOs2 <- spEOOs[st_geometry_type(spEOOs)=="POLYGON",]
+# errado era abundancia tb
+# # contar dados
+# 
+# # teria q ser por pixel!
+# 
+# # to multipoint (pontos por spp)
+# 
+# df_abelhas_agg2 <- df_abelhas_agg %>%
+#   group_by(name) %>%
+#   summarise()
+# 
+# df_abelhas_agg2$id <- as.numeric(as.factor(df_abelhas_agg2$name))
 
 
-st_write(spEOOs2,"poligonos_abelhas.shp",append = F)
+#===== ideia pra calcular area ocorrencia ======================================
 
-plot(st_geometry(spEOOs2))
-
-#===============================================================================
-
-names(spEOOs2)[1] <- "binomial"
-
-# usando pacote de gerar raster a partir de poligonos
-# fica ruim, deixar de lado
-# library(letsR)
+# convex hulls (isso seria pra delimitar areas ocorrencia!)
+# spEOOs <- st_convex_hull(df_abelhas_agg2) 
 # 
-# # pro <- paste("+proj=eqdc +lat_0=-32 +lon_0=-60 +lat_1=-5",
-# #              "+lat_2=-42 +x_0=0 +y_0=0 +ellps=aust_SA", 
-# #              "+units=m +no_defs")
-# 
-# pro2 <- paste("+proj=utm +zone=23 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
-# 
-# #SA_EC <- CRS(pro)
-# 
-# SA_EC <- CRS(pro2)
+# spEOOs2 <- spEOOs[st_geometry_type(spEOOs)=="POLYGON",]
 # 
 # 
-# pro <- paste("+proj=eqdc +lat_0=-32 +lon_0=-60 +lat_1=-5",
-#              "+lat_2=-42 +x_0=0 +y_0=0 +ellps=aust_SA", 
-#              "+units=m +no_defs")
+# st_write(spEOOs2,"poligonos_abelhas.shp",append = F)
 # 
-# crs <- "+proj=longlat +datum=WGS84 +no_defs"
-# 
-# 
-# st_crs(spEOOs2) <- st_crs(ae_pj)
-# 
-# abelhas <- st_transform(spEOOs2,crs = crs)
-# 
-# st_crs(abelhas)
-# 
-# abelhas <-as(abelhas,"Spatial")
-# 
-# # resolver resolucao! ta uma bosta
-# 
-# PAM <- lets.presab(abelhas,  xmn = -44.928, xmx = -40.88869,
-#                    ymn =-21.20049, ymx = -17.15996,res = 1)
-# 
-# 
-# # usar isso pra definir o limite qndo faço em metros!
-# r2 <- projectRaster(PAM$Richness_Raster, crs = SA_EC)
-# mean(res(r2))
-# 
-# PAM_proj <- lets.presab(abelhas, xmn =507474.9,
-#                         xmx = 927474.9,
-#                         ymn = 7658748, ymx =8102748 ,
-#                         res = 540,
-#                         crs.grid = SA_EC)
-# 
-# 
-# plot(PAM_proj)
-
-####bacana mas acho q da pra seguir com os hulls ###############################
-
-# # grid
-# 
-# CRGrid <- ae_pj %>%
-#   st_make_grid(cellsize =500) %>%
-#   st_intersection(ae_pj) %>%
-#   st_cast("MULTIPOLYGON") %>%
-#   st_sf() %>%
-#   mutate(cellid = row_number())
-# 
-# 
-# 
-# 
-# # cell richness
-# richness_grid <- CRGrid %>%
-#   st_join(sp_occ_sf) %>%
-#   mutate(overlap = ifelse(!is.na(id), 1, 0)) %>%
-#   group_by(cellid) %>%
-#   summarize(num_species = sum(overlap))
-# 
-# 
-
-
+# plot(st_geometry(spEOOs2))
 
 #==== interpolation ============================================================
 
 
 #interpolacao com pontos!
 
-# raster pra usar de base (riqueza de dispersores)
 
-disp <- raster::raster(file.path(p,"grids_riqueza","riqueza_dispersores.tif"))
 df_abelhas_pj <-st_transform(df_abelhas_int,crs =st_crs(disp) ) 
 
 st_crs(df_abelhas_rich)==st_crs(disp)
 st_crs(df_abelhas_rich)==st_crs(ae_pj)
 
-fitmax <- gstat::gstat(formula = n_spp ~ 1, data = df_abelhas_rich, nmax = 8, 
+fitmax <- gstat::gstat(formula = riqueza ~ 1, data = df_abelhas_rich, nmax = 8, 
                        set = list(idp = .5))
 
 st_crs(df_abelhas_rich) <- st_crs(disp)
@@ -459,4 +399,4 @@ vtmaxsm_m <- mask(vtmaxsm_c,ae_pj)
 
 plot(vtmaxsm_m, col=rev(heat.colors(255)), ext=ae_pj)
 
-writeRaster(vtmaxsm_m,"riqueza_abelhas.tif",overwrite=T)
+writeRaster(vtmaxsm_m,"riqueza_abelhas_atualizado.tif",overwrite=T)
