@@ -1,0 +1,262 @@
+---
+title: "Barragem Doutor"
+author: "Francisco d'Albertas"
+date: "17/12/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#==== pacotes ==================================================================
+
+library(sf)
+library(dplyr)
+library(raster)
+library(flextable)
+#===============================================================================
+
+# caminho raiz
+
+p <- "G:/Meu Drive/aquaflora"
+
+# recortando raster
+
+dir.create (file.path(p,"/temp"), showWarnings = FALSE)
+
+#sets temp directory
+
+rasterOptions(tmpdir=file.path(p,"/temp")) 
+
+# knitr::knit("G:\\Meu Drive\\aquaflora\\aquaflora\\santana\\relatorio_santana.Rmd")
+# rmarkdown::render("G:\\Meu Drive\\aquaflora\\aquaflora\\santana\\relatorio_santana.Rmd")
+```
+
+## Area da mancha de inundacao
+
+8785.867719
+
+## Area total dos municipios
+
+Area total em ha baseada no shape
+```{r echo=FALSE}
+
+# esse eh pro IBGE
+
+limites <- st_read(file.path(p,"aquaflora","doutor","municipios"))
+ 
+limites$Relatorio <- "Doutor"
+
+limites_ae <- limites %>% 
+  group_by(Relatorio) %>%
+  summarise()
+
+area_total_mun <- as.numeric(st_area(limites_ae))/10^4
+
+area_total_mun
+```
+
+## Populacao total!
+
+## Usos do solo mapbiomas
+
+- Cortei o mapa de usos do mapbiomas pro limite do relatorio Santana.
+
+
+```{r include=FALSE}
+
+limites_mapbio <- st_read(file.path(p,"aquaflora","doutor","limite"))
+
+
+mapbio <- raster(file.path(p,"mapbiomas",
+                         "mapbiomas-brazil-collection-60-minasgerais-2020.tif"))
+
+#limites_ae <- st_zm(barragemlat,drop=T)
+usos_c <- crop(x = mapbio,limites_mapbio)
+usos_m <- mask(x = usos_c,limites_ae)
+
+
+
+```
+
+- Com o shape cortado, calculei os usos:
+
+```{r include=FALSE}
+
+# funcao pro calculo
+
+empresa <- "Vale"
+escala <- "bacia_modificada"
+
+area_classes <- function(empresa,lista_rasters,escala){
+  
+  
+    for(i in seq(1,length(lista_rasters),1)){
+    
+      r <-lista_rasters[[i]]# substituir por lista_rasters
+      
+      mini_rast <- r/r
+      
+      # get the total number of cells for this shape (save for below)
+      
+      total_cells <- cellStats(mini_rast, 'sum')
+      
+      # multiply by original - to make a mask layer from your original raster
+      
+      my_cutout <- r*mini_rast
+      
+      # Count the number of cells for each discrete landcover class
+      
+      in_this_poly_unit <- freq(my_cutout)
+      
+      #Divide the cell count for each of these classes by the total 
+      # number of cells in your current shape
+      
+      class_percents <- in_this_poly_unit[,2]/total_cells
+      
+      
+      # calculating area
+      
+      area <- as.data.frame(in_this_poly_unit) # exclui NAs!
+      area <- area[!is.na(area$value),]
+      area$area_ha <- area$count*0.09
+      # make the function return a dataframe with
+      # % landcover in each class for each shape
+      output <- data.frame(classe_MapBiomas=in_this_poly_unit[,1], portion=class_percents)
+      output <- output[!is.na(output$classe_MapBiomas),]
+      output <- cbind(output,area[,3])
+      names(output)[3] <- "area_ha"
+      output$cluster <- names(r)
+      #area=area
+      codigo_mapbio <- data.frame(classe= c("Formacao Florestal"," Formacao Savanica","Silvicultura"," Campo Alagado","Formacao Campestre"," Pastagem"," Mosaico de Agricultura e Pastagem","Area Urbanizada","Outras Áreas nao Vegetadas","Afloramento Rochoso","Mineracao","Agua","Soja","Cafe"),classe_MapBiomas=output$classe_MapBiomas)
+      output <- left_join(output,codigo_mapbio)
+      return(output)
+      write.csv(output,file.path(p,"aquaflora","doutor",
+                                 paste0(empresa,"_tabela_usos_","Doutor",escala,".csv")))
+  }
+
+}
+
+
+usos_Doutor <- area_classes(empresa = "Vale",lista_rasters = list(usos_m),escala = "bacia_modificada")
+
+usos_Doutor <- usos_Doutor[,c(1:3,5)]
+usos_Doutor$portion <- round(usos_Doutor$portion,2)
+
+```
+
+
+```{r echo=FALSE}
+
+ft <- flextable(usos_Doutor)
+
+ft
+
+
+```
+
+### Area total usando o mapbiomas
+
+```{r echo=FALSE}
+sum(usos_Doutor$area_ha)
+```
+
+### Soma agricultura,floresta,campos,pastagens,savana, silvicultura
+
+```{r}
+#sum(usos_Santana$area_ha[usos_Santana[c(1:3,5:7)])
+
+sum(usos_Doutor[c(1:3,5:7),3])
+
+```
+
+
+
+## Usos agricolas do IBGE
+
+```{r include=FALSE}
+
+municipios <- limites$GEOCODIGO
+
+lista_dados <- list.files(file.path(p,"tabelas_IBGE","bacias_7"),pattern = ".csv",full.names = T)
+
+lista_dados_agg <- grep(lista_dados,pattern = "agg",value = T)
+
+lista_mun <- lista_dados[!lista_dados %in% lista_dados_agg]
+
+
+df_mun <- lapply(lista_mun,function(x)read.csv(x))
+
+
+df <- do.call(rbind,df_mun)
+
+df_sub <- df %>% filter(geocodigo %in% municipios)
+
+# agregar por cultivo
+
+names(df_sub)[2] <- "cultivo"
+
+cultivos <- df_sub %>%
+  group_by(cultivo)%>%
+  filter(cultivo!="Café (em grão) Arábica")%>%
+  summarise(area_total=sum(area_total))%>%
+  filter(area_total!=0)
+
+
+cultivos$prop <- round(cultivos$area_total/sum(cultivos$area_total),2)
+
+empresa <- "Vale"
+escala <- "bacia_modificada"
+
+write.csv(cultivos,file.path(p,"aquaflora","doutor",                     paste0(empresa,"_culturas_IBGE_","doutor",escala,".csv")),
+          row.names = F)
+
+
+
+
+
+```
+
+```{r echo=FALSE}
+
+cultivos2 <- data.frame(cultivo="total",area_total=sum(cultivos$area_total),prop=1)
+
+# reordenando
+
+cultivos <- cultivos %>% arrange(desc(area_total))
+
+cultivos3 <- rbind(cultivos,cultivos2)%>%
+  arrange(desc(area_total))
+
+
+ft2 <- flextable(cultivos3)
+
+ft2
+
+```
+
+## Area agricola com menos de 2km distancia veg
+
+```{r echo=FALSE}
+
+eucdist <- raster(file.path(p,"aquaflora","doutor","eucdist","Doutor_dist_Veg.tif"))
+
+m <- c(0,0,NA, 1,2000,1,2000,76440,NA)
+
+rclmat <- matrix(m, ncol=3, byrow=TRUE)
+
+r_rc <- reclassify(eucdist, rclmat)
+
+sum_raster_cells <-cellStats(r_rc, 'sum')
+
+sum_raster_cells*0.09
+
+```
+
+
+
+```{r include=FALSE}
+#removes entire temp directory without affecting other running processes
+unlink(file.path(file.path(p,"/temp")), recursive = TRUE)
+```
+
